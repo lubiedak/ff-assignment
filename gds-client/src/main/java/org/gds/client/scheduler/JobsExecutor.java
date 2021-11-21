@@ -1,8 +1,9 @@
-package org.gds.client;
+package org.gds.client.scheduler;
 
+import org.gds.client.GdsSession;
+import org.gds.client.Job;
+import org.gds.client.SessionManager;
 import org.slf4j.Logger;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -16,13 +17,12 @@ import static org.gds.client.SessionManager.MAX_SESSIONS;
 import static org.slf4j.LoggerFactory.getLogger;
 
 @Service
-@EnableAsync
 public class JobsExecutor {
     private static Logger log = getLogger(JobsExecutor.class);
 
     private final SessionManager sessionManager;
 
-    private final List<Job> jobsReadyToBeExecuted;
+    private final Deque<Job> jobsReadyToBeExecuted;
     private final Deque<Job> waitingJobs;
 
     private final ExecutorService executor;
@@ -30,7 +30,7 @@ public class JobsExecutor {
 
     public JobsExecutor(SessionManager sessionManager) {
         this.sessionManager = sessionManager;
-        jobsReadyToBeExecuted = new ArrayList<>();
+        jobsReadyToBeExecuted = new ArrayDeque<>();
         waitingJobs = new ArrayDeque<>();
         executor = Executors.newFixedThreadPool(MAX_SESSIONS);
         tasks = new HashSet<>();
@@ -40,8 +40,10 @@ public class JobsExecutor {
         if (sessionManager.areSessionsAvailable()){
             attachSessionToAJob(job);
         } else {
+            log.info("No sessions available");
             waitingJobs.add(job);
         }
+        log.info("Tasks running: {}, waiting {} ", tasks.size(), waitingJobs.size());
     }
 
     private void attachSessionToAJob(Job job){
@@ -49,22 +51,22 @@ public class JobsExecutor {
         if(session != null) {
             session.assignJob(job.attachSession(session.getSessionId()));
             jobsReadyToBeExecuted.add(job);
-            log.info("Attached session of {} to job {}. Jobs ready: {}", session.getSessionId(), session.getAssignedJobId(), jobsReadyToBeExecuted.size());
+            log.info("Attached session of {} to job {}.", session.getSessionId(), session.getAssignedJobId());
         }
     }
 
-    @Async
     @Scheduled(initialDelay=0, fixedRate = 500)
     public void checkIfAreSessionsAvailableForWaitingJobs() {
         if(!waitingJobs.isEmpty() && sessionManager.areSessionsAvailable() ){
+            log.info("There are some free sessions for waiting jobs. Que size {}", waitingJobs.size());
             attachSessionToAJob(waitingJobs.poll());
         }
     }
 
-    @Async
     @Scheduled(initialDelay=0, fixedRate = 100)
     public void startReadyJobs() throws InterruptedException {
-        for(var job : jobsReadyToBeExecuted){
+        if(!jobsReadyToBeExecuted.isEmpty()){
+            Job job = jobsReadyToBeExecuted.poll();
             FutureTask<Integer> task = new FutureTask<>(job, job.getId());
             tasks.add(task);
             executor.submit(task);
@@ -72,7 +74,6 @@ public class JobsExecutor {
         }
     }
 
-    @Async
     @Scheduled(initialDelay=0, fixedRate = 300)
     public void cleanFinishedJobs(){
         for(var t : tasks){
@@ -90,6 +91,5 @@ public class JobsExecutor {
 
     public void detachSessionFromJob(int jobId){
         sessionManager.releaseSession(jobId);
-        jobsReadyToBeExecuted.removeIf(job -> job.getId() == jobId);
     }
 }

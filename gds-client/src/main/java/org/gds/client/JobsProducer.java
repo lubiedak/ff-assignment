@@ -1,58 +1,32 @@
 package org.gds.client;
 
+import org.gds.client.scheduler.JobsExecutor;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.ThreadLocalRandom;
 
-import static org.gds.client.SessionManager.MAX_SESSIONS;
 import static org.slf4j.LoggerFactory.*;
 
 @Component
-public class JobsPoolManager {
-    private static Logger log = getLogger(JobsPoolManager.class);
-    private final JobHandler jobHandler;
+public class JobsProducer {
+    private static int JOB_COUNTER = 0;
 
-    public JobsPoolManager(JobHandler jobHandler) {
-        this.jobHandler = jobHandler;
+    private static Logger log = getLogger(JobsProducer.class);
+    private final JobsExecutor jobsExecutor;
+
+    public JobsProducer(JobsExecutor jobHandler) {
+        this.jobsExecutor = jobHandler;
     }
 
-    @PostConstruct
-    public void simulateJobsQue() throws InterruptedException {
-        ExecutorService executor = Executors.newFixedThreadPool(MAX_SESSIONS);
-        Set<FutureTask<Integer>> tasks = new HashSet<>();
-        for (int i = 1; i < 100; i++) {
-
+    @Scheduled(fixedDelay = 500)
+    public void simulateJobsQue() {
+        if(JOB_COUNTER < 100) {
             int requiredTime = ThreadLocalRandom.current().nextInt(5, 16);
-            Job job = new Job(i, requiredTime);
-            log.info("New job created: {} need work {} seconds", i, requiredTime);
-            jobHandler.handle(job);
-            if(job.canStart()) {
-                FutureTask<Integer> task = new FutureTask<>(job, job.getId());
-                tasks.add(task);
-                executor.submit(task);
-            } else {
-
-            }
-
-            for(var t : tasks){
-                if(t.isDone()){
-                    try {
-                        jobHandler.detachSessionFromJob(t.get());
-                        log.info("Job {} completed", t.get());
-                    } catch (ExecutionException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-            tasks.removeIf(t->t.isDone());
-
-            Thread.sleep(ThreadLocalRandom.current().nextInt(500, 1000));
+            Job job = new Job(JOB_COUNTER++, requiredTime);
+            log.info("New job created: {} need work {} seconds", JOB_COUNTER, requiredTime);
+            jobsExecutor.handle(job);
         }
     }
 }

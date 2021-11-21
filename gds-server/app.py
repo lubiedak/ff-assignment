@@ -4,6 +4,7 @@ from flask import request, jsonify
 app = flask.Flask(__name__)
 app.config["DEBUG"] = True
 
+service = service.Service()
 
 @app.route('/', methods=['GET'])
 def home():
@@ -17,7 +18,7 @@ def home():
 
 @app.route('/create-session', methods=['POST'])
 def create_session():
-    service.create_session()
+    return service.create_session()
 
 
 @app.route('/delete-session', methods=['DELETE'])
@@ -40,7 +41,12 @@ def ping():
 
 @app.route('/cost', methods=['GET'])
 def cost():
-    return "1"
+    return service.total_cost()
+
+
+@app.route('/sessions', methods=['GET'])
+def sessions():
+    return service.all_sessions()
 
 
 def get_and_validate_id(args):
